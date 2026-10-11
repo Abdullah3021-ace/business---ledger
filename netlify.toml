@@ -1,0 +1,27 @@
+# Netlify deploy config for Business Ledger.
+#
+# How the site is split:
+#   - public/*            -> served directly by Netlify's CDN (fast, no function involved)
+#   - /api/*               -> handled by netlify/functions/api.mjs (see that file's `config.path`)
+#
+# In the Netlify UI, if this file lives at your repo root alongside package.json, no extra
+# "Base directory" setting is needed. If you kept the "business-ledger" folder itself in the repo
+# root, set Base directory = business-ledger in the Netlify site settings instead of editing this
+# file's paths.
+
+[build]
+  publish = "public"
+  functions = "netlify/functions"
+  command = "npm install"
+
+[functions]
+  node_bundler = "esbuild"
+  # Install (not bundle) the database drivers - firebase-admin in particular does not bundle reliably.
+  external_node_modules = ["pg", "firebase-admin"]
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "same-origin"

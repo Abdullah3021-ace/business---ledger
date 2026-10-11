@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Ledger">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<title>Business Ledger</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div id="boot" class="boot">Loading…</div>
+<section id="login" class="login" hidden></section>
+<div class="app" id="app" hidden></div>
+
+<div class="modal" id="modal"><div class="modal-box" id="modalBox" role="dialog" aria-modal="true"></div></div>
+<div class="lightbox" id="lightbox" hidden></div>
+<div id="toasts" aria-live="polite"></div>
+<script src="/app.js"></script>
+</body>
+</html>
