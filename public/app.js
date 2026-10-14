@@ -61,7 +61,11 @@
   // Balance is ALWAYS all-time: everything sold, minus goods returned, minus money received. Never limited to a period.
   const RP_KINDS = ['Wax', 'Designing'];
   const rpRows = (cid, kind) => S.d.rp.filter((x) => x.customerId === cid && (!kind || x.kind === kind));
-  const rpSum = (cid, kind) => sum(rpRows(cid, kind), (x) => x.amount);
+  const isRpSale = (x) => x.entry === 'Sale';
+  const rpOut = (cid, kind) => sum(rpRows(cid, kind).filter(isRpSale), (x) => x.amount);   // RP given to customer (sales)
+  const rpIn = (cid, kind) => sum(rpRows(cid, kind).filter((x) => !isRpSale(x)), (x) => x.amount); // money received
+  const rpBal = (cid, kind) => round2(rpOut(cid, kind) - rpIn(cid, kind)); // positive = customer owes us for RP
+  const cfgFor = (key, entry) => (key === 'rp' && entry === 'Sale' ? CFG.rpSale : CFG[key]);
   const custRet = (id) => sum(S.d.returns.filter((x) => x.customerId === id), (x) => x.amount);
   const custBal = (id) => round2(sum(S.d.sales.filter((x) => x.customerId === id), (x) => x.total) - custRet(id) - sum(S.d.payments.filter((x) => x.customerId === id), (x) => x.amount));
   const balLabel = (b) => (b > 0 ? money(b) : b < 0 ? money(-b) + ' advance' : money(0));
@@ -198,10 +202,22 @@
       ],
       defaults: () => ({ date: todayStr() })
     },
+    rpSale: {
+      ownerType: 'rp', formTitle: (id, cx) => `${id ? 'Edit' : 'Add'} RP-${cx.kind} Sale — ${custName(cx.customerId)}`, saveLabel: 'Save RP Sale',
+      confirmDelete: 'Delete this RP sale?',
+      notice: 'RP given to this customer (goes out). It increases what they owe for RP. It does not change the customer\'s normal sales balance or your income until they pay.',
+      fields: [
+        { n: 'date', l: 'Date', t: 'date', req: 1 }, { n: 'amount', l: 'Amount (Rs)', t: 'number', req: 1 },
+        { n: 'description', l: 'What was given', t: 'text', full: 1, ph: 'e.g. 5 kg wax / logo design' },
+        { n: 'files', l: 'Attach photo or audio message', t: 'files', full: 1 },
+        { n: 'notes', l: 'Notes', t: 'textarea', full: 1 }
+      ],
+      defaults: () => ({ date: todayStr() })
+    },
     rp: {
-      ownerType: 'rp', formTitle: (id, cx) => `${id ? 'Edit' : 'Add'} RP-${cx.kind} Money — ${custName(cx.customerId)}`, saveLabel: 'Save', saveClass: 'green',
-      confirmDelete: 'Delete this RP entry?',
-      notice: 'Money this customer paid for RP. It is added to this RP account\'s total and to "Money In" on the dashboard. It does not change the customer\'s sales balance.',
+      ownerType: 'rp', formTitle: (id, cx) => `${id ? 'Edit' : 'Add'} RP-${cx.kind} Payment Received — ${custName(cx.customerId)}`, saveLabel: 'Save Payment', saveClass: 'green',
+      confirmDelete: 'Delete this RP payment?',
+      notice: 'Money received from this customer for RP. It reduces what they owe for RP and is added to "Money In" on the dashboard. It does not change the customer\'s normal sales balance.',
       fields: [
         { n: 'date', l: 'Date', t: 'date', req: 1 }, { n: 'amount', l: 'Amount (Rs)', t: 'number', req: 1 },
         { n: 'method', l: 'Payment Method', t: 'select', o: METHODS }, { n: 'description', l: 'Note', t: 'text', ph: 'e.g. advance for design' },
@@ -250,7 +266,8 @@
     const payRows = d.payments.filter((x) => inPeriod(x.date, p)), saleRows = d.sales.filter((x) => inPeriod(x.date, p)), retRows = d.returns.filter((x) => inPeriod(x.date, p));
     const retTotal = sum(retRows, (x) => x.amount);
     const rpPeriod = d.rp.filter((x) => inPeriod(x.date, p));
-    const rpWax = sum(rpPeriod.filter((x) => x.kind === 'Wax'), (x) => x.amount), rpDes = sum(rpPeriod.filter((x) => x.kind === 'Designing'), (x) => x.amount);
+    const rpPaid = rpPeriod.filter((x) => !isRpSale(x));
+    const rpWax = sum(rpPaid.filter((x) => x.kind === 'Wax'), (x) => x.amount), rpDes = sum(rpPaid.filter((x) => x.kind === 'Designing'), (x) => x.amount);
     const otherIn = sum(inRows, (x) => x.amount), custIn = sum(payRows, (x) => x.amount), exp = sum(exRows, (x) => x.amount);
     const moneyIn = round2(otherIn + custIn + rpWax + rpDes), net = round2(moneyIn - exp);
     // Receivables are all-time on purpose: what customers owe you today does not depend on the period picker.
@@ -261,7 +278,7 @@
       ...inRows.map((x) => ({ ...x, type: 'Income', person: x.from })),
       ...exRows.map((x) => ({ ...x, type: 'Expense', person: x.paidTo })),
       ...payRows.map((x) => ({ ...x, type: 'Payment', person: custName(x.customerId) })),
-      ...rpPeriod.map((x) => ({ ...x, type: 'RP-' + x.kind, person: custName(x.customerId) }))
+      ...rpPeriod.map((x) => ({ ...x, type: 'RP-' + x.kind + (isRpSale(x) ? ' Sale' : ' Payment'), person: custName(x.customerId) }))
     ].sort(byNewest).slice(0, 8);
     main().innerHTML = header('Dashboard', 'Your business financial overview', periodSel('dash', p)) +
       `<div class="cards">${metric('Money In', money(moneyIn), 'green-text')}${metric('Expenses', money(exp), 'red-text')}${metric('Net (In − Expenses)', money(net), net < 0 ? 'red-text' : '')}${metric('Customers Owe You (today)', money(receivable), receivable > 0 ? 'red-text' : '')}</div>
@@ -269,7 +286,7 @@
        <div class="cards">${metric('Goods Returned (value)', money(retTotal), retTotal > 0 ? 'red-text' : '')}${metric('Net Sales (after returns)', money(round2(sum(saleRows, (x) => x.total) - retTotal)))}${metric('RP-Wax Received', money(rpWax), 'green-text')}${metric('RP-Designing Received', money(rpDes), 'green-text')}</div>
        <div class="grid2">
          <div class="section"><h2>Recent Transactions</h2>${recent.length ? `<div class="tablewrap"><table class="rt"><thead><tr><th>Date</th><th>Type</th><th>Person</th><th>Amount</th></tr></thead><tbody>${recent.map((x) =>
-            `<tr><td data-label="Date">${dateFmt(x.date)}</td><td data-label="Type"><span class="pill ${x.type === 'Expense' ? 'expense' : (x.type === 'Payment' || x.type.startsWith('RP-')) ? 'payment' : ''}">${x.type}</span></td><td data-label="Person">${esc(x.person || '')}</td><td data-label="Amount"><b>${money(x.amount)}</b></td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">No transactions found for this period.</div>'}</div>
+            `<tr><td data-label="Date">${dateFmt(x.date)}</td><td data-label="Type"><span class="pill ${x.type === 'Expense' ? 'expense' : (x.type === 'Payment' || x.type.endsWith('RP-Wax Payment') || x.type.endsWith('RP-Designing Payment')) ? 'payment' : ''}">${x.type}</span></td><td data-label="Person">${esc(x.person || '')}</td><td data-label="Amount"><b>${money(x.amount)}</b></td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">No transactions found for this period.</div>'}</div>
          <div class="section"><h2>Who Owes You</h2>${owing.slice(0, 10).map((x) => `<a class="tx" style="display:block" href="#/customers/${x.c.id}"><b>${esc(x.c.name)}</b><div class="desc">Outstanding: <strong>${money(x.b)}</strong></div></a>`).join('') || '<div class="empty">Nobody owes you anything right now.</div>'}${owing.length > 10 ? `<a class="muted" style="display:block;margin-top:10px;font-size:13px" href="#/customers">+ ${owing.length - 10} more — see Customers</a>` : ''}</div>
        </div>`;
   }
@@ -307,13 +324,14 @@
       `<div class="section"><div class="customer-head">${avatarHTML(c)}<div><h2 style="margin:0">${esc(c.name)}</h2><div class="muted" style="font-size:13px">${esc([c.phone, c.address].filter(Boolean).join(' · '))}</div></div></div>
         ${c.notes ? `<p class="muted" style="font-size:14px;margin:12px 0 0">${esc(c.notes)}</p>` : ''}
         <div class="detail-grid">${metric('Total Sales', money(s))}${metric('Returned Goods', rt ? '− ' + money(rt) : money(0), rt ? 'red-text' : '')}${metric('Total Received', money(p), 'green-text')}${metric(b < 0 ? 'Advance Paid' : 'Remaining Balance', money(Math.abs(b)), b > 0 ? 'red-text' : 'green-text')}</div></div>
-       <div class="section"><h2>RP <span class="muted" style="font-weight:500;font-size:15px">— total received ${money(rpSum(id))}</span></h2>
-         <p class="muted" style="margin:-6px 0 14px;font-size:13px">Money this customer paid for RP. Kept separate from the sales balance above.</p>
+       <div class="section"><h2>RP <span class="muted" style="font-weight:500;font-size:15px">— given ${money(rpOut(id))} · received ${money(rpIn(id))} · balance ${money(rpBal(id))}</span></h2>
+         <p class="muted" style="margin:-6px 0 14px;font-size:13px">RP given to this customer (outflow) and money received for it (inflow). Kept separate from the sales balance above. Positive balance = customer owes you.</p>
          <div class="rp-grid">${RP_KINDS.map((k) => {
            const rows = rpRows(id, k);
-           return `<div class="rp-block"><div class="tx-top"><div><b>RP-${k}</b><div class="desc">${rows.length} ${rows.length === 1 ? 'entry' : 'entries'}</div></div><b class="green-text">${money(rpSum(id, k))}</b></div>
-             <div class="tx-actions"><button class="btn green sm" data-action="add" data-res="rp" data-customer="${id}" data-kind="${k}">${ICON.plus}<span>Add Money</span></button></div>
-             ${rows.map((x) => `<div class="tx"><div class="tx-top"><div><b>${dateFmt(x.date)}</b><div class="desc">${[x.method, x.description].filter(Boolean).map(esc).join(' · ')}</div></div><b class="green-text">${money(x.amount)}</b></div>
+           return `<div class="rp-block"><div class="tx-top"><div><b>RP-${k}</b><div class="desc">${rows.length} ${rows.length === 1 ? 'entry' : 'entries'}</div></div><b class="${rpBal(id, k) > 0 ? 'red-text' : 'green-text'}">Balance ${money(rpBal(id, k))}</b></div>
+             <div class="rp-sum"><div><span class="muted">Given (out)</span><b>${money(rpOut(id, k))}</b></div><div><span class="muted">Received (in)</span><b class="green-text">${money(rpIn(id, k))}</b></div></div>
+             <div class="tx-actions"><button class="btn sm" data-action="add" data-res="rp" data-entry="Sale" data-customer="${id}" data-kind="${k}">${ICON.plus}<span>Add RP Sale</span></button><button class="btn green sm" data-action="add" data-res="rp" data-entry="Payment" data-customer="${id}" data-kind="${k}">${ICON.plus}<span>Payment Received</span></button></div>
+             ${rows.map((x) => `<div class="tx"><div class="tx-top"><div><b>${isRpSale(x) ? 'RP Sale (out)' : 'Payment received (in)'} · ${dateFmt(x.date)}</b><div class="desc">${[isRpSale(x) ? '' : x.method, x.description].filter(Boolean).map(esc).join(' · ')}</div></div><b class="${isRpSale(x) ? 'red-text' : 'green-text'}">${isRpSale(x) ? '' : '+'}${money(x.amount)}</b></div>
                ${x.notes ? `<div class="desc">${esc(x.notes)}</div>` : ''}${attBlock('rp', x.id, false)}
                <div class="tx-actions"><button class="btn secondary sm" data-action="edit" data-res="rp" data-id="${x.id}">Edit</button><button class="btn red sm" data-action="del-tx" data-res="rp" data-id="${x.id}">Delete</button></div></div>`).join('') || '<div class="empty" style="padding:14px">Nothing added yet.</div>'}</div>`;
          }).join('')}</div></div>
@@ -399,15 +417,17 @@
   }
 
   function openEntry(key, id, cx = {}) {
-    const c = CFG[key], rec = id ? findRec(key, id) : null;
+    const rec = id ? findRec(key, id) : null;
     if (id && !rec) return toast('Record not found', 'error');
+    const entry = key === 'rp' ? (cx.entry || (rec && rec.entry) || 'Payment') : '';
+    const c = cfgFor(key, entry);
     const v = rec ? { ...rec } : c.defaults();
     const customerId = cx.customerId || (rec && rec.customerId) || '';
     const kind = cx.kind || (rec && rec.kind) || '';
     const lists = c.fields.some((f) => f.list) ? `<datalist id="custNames">${S.d.customers.map((x) => `<option value="${esc(x.name)}"></option>`).join('')}</datalist>` : '';
     openModal(`<div class="modal-head"><h2>${esc(c.formTitle(id, { customerId, kind }))}</h2><button class="icon-btn" data-action="close" aria-label="Close">${ICON.x}</button></div>
       <div class="modal-body">${c.notice ? `<div class="notice">${esc(c.notice)}</div>` : ''}
-        <form id="entryForm" class="form" data-res="${key}" data-id="${id || ''}" data-customer="${esc(customerId)}" data-kind="${esc(kind)}">${c.fields.map((f) => fieldHTML(f, v, id, key)).join('')}<button type="submit" hidden></button></form>${lists}
+        <form id="entryForm" class="form" data-res="${key}" data-id="${id || ''}" data-customer="${esc(customerId)}" data-kind="${esc(kind)}" data-entry="${esc(entry)}">${c.fields.map((f) => fieldHTML(f, v, id, key)).join('')}<button type="submit" hidden></button></form>${lists}
         <div class="form-error" id="formError" hidden></div></div>
       <div class="modal-actions">${id ? '<button class="btn red" data-action="delete" type="button">Delete</button>' : ''}<button class="btn secondary" data-action="close" type="button">Close</button><button class="btn ${c.saveClass || ''}" id="saveBtn" data-action="save" type="button">${esc(c.saveLabel)}</button></div>`);
   }
@@ -422,11 +442,12 @@
   async function saveEntry() {
     const form = $('#entryForm');
     if (!form || !form.reportValidity()) return;
-    const key = form.dataset.res, id = form.dataset.id || null, c = CFG[key];
+    const key = form.dataset.res, id = form.dataset.id || null, c = cfgFor(key, form.dataset.entry);
     const body = {};
     for (const f of c.fields) if (f.t !== 'files' && f.t !== 'avatar') body[f.n] = form.elements.namedItem(f.n).value;
     if (form.dataset.customer) body.customerId = form.dataset.customer;
     if (form.dataset.kind) body.kind = form.dataset.kind;
+    if (form.dataset.entry) body.entry = form.dataset.entry;
     const bad = c.validate && c.validate(body);
     if (bad) return formError(bad);
     if (key === 'sales' && id) {
@@ -554,7 +575,7 @@
 
   /* ================================ session ============================= */
   const ACTIONS = {
-    add: (d) => openEntry(d.res, null, { customerId: d.customer, kind: d.kind }),
+    add: (d) => openEntry(d.res, null, { customerId: d.customer, kind: d.kind, entry: d.entry }),
     edit: (d) => openEntry(d.res, d.id),
     close: closeModal,
     save: saveEntry,
@@ -571,8 +592,8 @@
     print: () => window.print(),
     csv: (d) => {
       if (d.res === 'customers') {
-        return downloadCsv('customers-' + todayStr() + '.csv', ['Name', 'Phone', 'Address', 'Total Sales', 'Total Returns', 'Total Received', 'RP-Wax Received', 'RP-Designing Received', 'Balance (positive = owes you)'],
-          S.d.customers.map((c) => [c.name, c.phone, c.address, sum(S.d.sales.filter((x) => x.customerId === c.id), (x) => x.total), custRet(c.id), sum(S.d.payments.filter((x) => x.customerId === c.id), (x) => x.amount), rpSum(c.id, 'Wax'), rpSum(c.id, 'Designing'), custBal(c.id)]));
+        return downloadCsv('customers-' + todayStr() + '.csv', ['Name', 'Phone', 'Address', 'Total Sales', 'Total Returns', 'Total Received', 'RP-Wax Given', 'RP-Wax Received', 'RP-Designing Given', 'RP-Designing Received', 'Balance (positive = owes you)'],
+          S.d.customers.map((c) => [c.name, c.phone, c.address, sum(S.d.sales.filter((x) => x.customerId === c.id), (x) => x.total), custRet(c.id), sum(S.d.payments.filter((x) => x.customerId === c.id), (x) => x.amount), rpOut(c.id, 'Wax'), rpIn(c.id, 'Wax'), rpOut(c.id, 'Designing'), rpIn(c.id, 'Designing'), custBal(c.id)]));
       }
       const fields = CFG[d.res].fields.filter((f) => f.t !== 'files');
       downloadCsv(d.res + '-' + todayStr() + '.csv', fields.map((f) => f.l), ledgerRows(d.res).map((r) => fields.map((f) => r[f.n] ?? '')));

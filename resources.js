@@ -76,6 +76,7 @@ const RESOURCES = {
     fields: [
       F('customerId', 'customer_id', 'str', { required: true, max: 100 }),
       F('kind', 'kind', 'enum', { required: true, values: ['Wax', 'Designing'] }),
+      F('entry', 'entry', 'enum', { values: ['Sale', 'Payment'], default: 'Payment' }),
       F('date', 'entry_date', 'date', { required: true }),
       F('amount', 'amount', 'num', { required: true, min: 0.01 }),
       F('method', 'method', 'str', { max: 60 }),

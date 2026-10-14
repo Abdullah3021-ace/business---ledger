@@ -339,9 +339,14 @@ test('RP: Wax/Designing money entries are validated, kept per account, backed up
   assert.equal(r.status, 201);
   const wid = r.data.id;
   assert.equal((await call('POST', '/api/rp', { ...base, kind: 'Designing', amount: 1000 })).status, 201);
+  assert.equal((await call('POST', '/api/rp', { ...base, kind: 'Wax', entry: 'Bad' })).status, 400);
+  r = await call('POST', '/api/rp', { ...base, kind: 'Wax', entry: 'Sale', amount: 9000, description: '5 kg wax' });
+  assert.equal(r.status, 201);
+  assert.equal(r.data.entry, 'Sale');
   let d = (await call('GET', '/api/data')).data;
   const mine = d.rp.filter((x) => x.customerId === cid);
-  assert.equal(mine.filter((x) => x.kind === 'Wax').reduce((a, x) => a + x.amount, 0), 2500);
+  assert.equal(mine.filter((x) => x.kind === 'Wax' && x.entry === 'Payment').reduce((a, x) => a + x.amount, 0), 2500);
+  assert.equal(mine.filter((x) => x.kind === 'Wax' && x.entry === 'Sale').reduce((a, x) => a + x.amount, 0), 9000);
   assert.equal(mine.filter((x) => x.kind === 'Designing').reduce((a, x) => a + x.amount, 0), 1000);
   assert.equal((await call('PUT', '/api/rp/' + wid, { ...base, kind: 'Wax', amount: 3000 })).status, 200);
   const backup = (await call('GET', '/api/export')).data;
