@@ -198,16 +198,16 @@ async function createApp() {
   const byNewest = (a, b) => String(b.entry_date).localeCompare(String(a.entry_date)) || String(b.created_at).localeCompare(String(a.created_at));
 
   async function loadAll() {
-    const [customers, income, expenses, sales, payments, returns, bound, attMeta] = await Promise.all([
-      db.list('customers'), db.list('income'), db.list('expenses'), db.list('sales'), db.list('payments'), db.list('returns'), db.list('bound'), db.attachments.listMeta()
+    const [customers, income, expenses, sales, payments, returns, rp, bound, attMeta] = await Promise.all([
+      db.list('customers'), db.list('income'), db.list('expenses'), db.list('sales'), db.list('payments'), db.list('returns'), db.list('rp'), db.list('bound'), db.attachments.listMeta()
     ]);
     customers.sort((a, b) => String(a.name).localeCompare(String(b.name)));
-    for (const arr of [income, expenses, sales, payments, returns, bound]) arr.sort(byNewest);
+    for (const arr of [income, expenses, sales, payments, returns, rp, bound]) arr.sort(byNewest);
     const map = (name, rows) => rows.map((r) => R.toApi(R.RESOURCES[name], r));
     const attBytes = attMeta.reduce((s, a) => s + Number(a.size || 0), 0);
     return {
       customers: map('customers', customers), income: map('income', income), expenses: map('expenses', expenses),
-      sales: map('sales', sales), payments: map('payments', payments), returns: map('returns', returns), bound: map('bound', bound),
+      sales: map('sales', sales), payments: map('payments', payments), returns: map('returns', returns), rp: map('rp', rp), bound: map('bound', bound),
       attachments: attMeta.map(R.attToApi),
       meta: { db: db.kind, user: ADMIN_USER, attachmentCount: attMeta.length, attachmentBytes: attBytes, maxStorageBytes: MAX_STORAGE, maxUploadBytes: MAX_UPLOAD }
     };
@@ -234,7 +234,7 @@ async function createApp() {
     return row ? R.toApi(R.RESOURCES[name], row) : null;
   }
   async function beforeWrite(name, v) {
-    if (name === 'sales' || name === 'payments' || name === 'returns') {
+    if (name === 'sales' || name === 'payments' || name === 'returns' || name === 'rp') {
       const c = await db.get('customers', v.customer_id);
       if (!c) throw new HttpError(400, 'Customer not found');
     }
@@ -302,6 +302,8 @@ async function createApp() {
         const sales = (await db.list('sales')).filter((x) => x.customer_id === id);
         const payments = (await db.list('payments')).filter((x) => x.customer_id === id);
         const rets = (await db.list('returns')).filter((x) => x.customer_id === id);
+        const rps = (await db.list('rp')).filter((x) => x.customer_id === id);
+        for (const r of rps) { await db.attachments.removeWhere('rp', r.id); await db.remove('rp', r.id); }
         for (const r of rets) { await db.attachments.removeWhere('return', r.id); await db.remove('returns', r.id); }
         for (const s of sales) await db.attachments.removeWhere('sale', s.id);
         for (const p of payments) await db.attachments.removeWhere('payment', p.id);
@@ -383,7 +385,7 @@ async function createApp() {
   route('POST', '/api/import', async (c) => {
     const b = await jsonBody(c.req, 5 * 1024 * 1024);
     if (!b || b.app !== 'business-ledger') throw new HttpError(400, 'This is not a Business Ledger backup file');
-    const order = ['customers', 'income', 'expenses', 'sales', 'payments', 'returns', 'bound'];
+    const order = ['customers', 'income', 'expenses', 'sales', 'payments', 'returns', 'rp', 'bound'];
     const known = new Set((await db.list('customers')).map((x) => x.id));
     const added = {}, skipped = {}, problems = [];
     for (const name of order) {
@@ -396,7 +398,7 @@ async function createApp() {
           if (!r || typeof r.id !== 'string' || !r.id || r.id.length > 100 || /[\/\s]/.test(r.id)) throw new Error('bad id');
           if (have.has(r.id)) { skipped[name]++; continue; }
           const v = R.clean(res, r);
-          if ((name === 'sales' || name === 'payments' || name === 'returns') && !known.has(v.customer_id)) throw new Error('customer missing');
+          if ((name === 'sales' || name === 'payments' || name === 'returns' || name === 'rp') && !known.has(v.customer_id)) throw new Error('customer missing');
           if (name === 'sales' && v.received > v.total) throw new Error('received > total');
           const row = { ...v, created_at: typeof r.createdAt === 'string' && r.createdAt ? r.createdAt : new Date().toISOString() };
           if (name === 'payments' && r.saleId) row.sale_id = String(r.saleId);

@@ -70,6 +70,19 @@ const RESOURCES = {
     ],
     readOnlyExtra: [F('saleId', 'sale_id', 'str')]
   },
+  // RP = a product/service the business gives to a customer; the customer pays for it. Two sub-accounts: Wax and Designing.
+  rp: {
+    table: 'rp', ownerType: 'rp',
+    fields: [
+      F('customerId', 'customer_id', 'str', { required: true, max: 100 }),
+      F('kind', 'kind', 'enum', { required: true, values: ['Wax', 'Designing'] }),
+      F('date', 'entry_date', 'date', { required: true }),
+      F('amount', 'amount', 'num', { required: true, min: 0.01 }),
+      F('method', 'method', 'str', { max: 60 }),
+      F('description', 'description', 'str', { max: 1000 }),
+      F('notes', 'notes', 'str', { max: 4000 })
+    ]
+  },
   returns: {
     table: 'returns', ownerType: 'return',
     fields: [

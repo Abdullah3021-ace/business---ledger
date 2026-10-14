@@ -26,7 +26,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const TABLES = ['customers', 'income', 'expenses', 'sales', 'payments', 'returns', 'bound', 'meta'];
+const TABLES = ['customers', 'income', 'expenses', 'sales', 'payments', 'returns', 'rp', 'bound', 'meta'];
 // 'meta' holds internal bookkeeping (e.g. login-attempt counters) so they survive serverless cold starts.
 const SERVERLESS = Boolean(process.env.NETLIFY || process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
 

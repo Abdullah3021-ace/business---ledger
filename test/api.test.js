@@ -327,6 +327,35 @@ test('returns: validated, stored, cascade-deleted, backed up; linked payment can
   assert.equal(d.returns.some((x) => x.customerId === cid), false);
 });
 
+test('RP: Wax/Designing money entries are validated, kept per account, backed up, cascade-deleted', async () => {
+  let r = await call('POST', '/api/customers', { name: 'RP Customer' });
+  const cid = r.data.id;
+  const base = { customerId: cid, date: '2026-10-05', amount: 2500 };
+  assert.equal((await call('POST', '/api/rp', { ...base })).status, 400, 'kind required');
+  assert.equal((await call('POST', '/api/rp', { ...base, kind: 'Other' })).status, 400);
+  assert.equal((await call('POST', '/api/rp', { ...base, kind: 'Wax', amount: 0 })).status, 400);
+  assert.equal((await call('POST', '/api/rp', { ...base, kind: 'Wax', customerId: 'nope' })).status, 400);
+  r = await call('POST', '/api/rp', { ...base, kind: 'Wax', description: 'advance' });
+  assert.equal(r.status, 201);
+  const wid = r.data.id;
+  assert.equal((await call('POST', '/api/rp', { ...base, kind: 'Designing', amount: 1000 })).status, 201);
+  let d = (await call('GET', '/api/data')).data;
+  const mine = d.rp.filter((x) => x.customerId === cid);
+  assert.equal(mine.filter((x) => x.kind === 'Wax').reduce((a, x) => a + x.amount, 0), 2500);
+  assert.equal(mine.filter((x) => x.kind === 'Designing').reduce((a, x) => a + x.amount, 0), 1000);
+  assert.equal((await call('PUT', '/api/rp/' + wid, { ...base, kind: 'Wax', amount: 3000 })).status, 200);
+  const backup = (await call('GET', '/api/export')).data;
+  assert.ok(backup.rp && backup.rp.length >= 2);
+  assert.equal((await call('DELETE', '/api/rp/' + wid)).status, 200);
+  r = await call('POST', '/api/import', backup);
+  assert.equal(r.status, 200);
+  d = (await call('GET', '/api/data')).data;
+  assert.ok(d.rp.some((x) => x.id === wid));
+  await call('DELETE', '/api/customers/' + cid);
+  d = (await call('GET', '/api/data')).data;
+  assert.equal(d.rp.some((x) => x.customerId === cid), false);
+});
+
 test('login is rate limited after repeated failures', async () => {
   let last;
   for (let i = 0; i < 11; i++) last = await call('POST', '/api/login', { username: 'owner', password: 'wrong' + i }, { noCookie: true });

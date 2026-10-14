@@ -204,6 +204,11 @@ tr.clickable:hover td{background:#f9fafb}
 @keyframes sheet{from{transform:translateY(40px);opacity:.4}to{transform:none;opacity:1}}
 @media(prefers-reduced-motion:reduce){.modal-box{animation:none}.toast{transition:none}}
 
+/* ---------- RP (customer page) ---------- */
+.rp-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.rp-block{border:1px solid var(--line);border-radius:12px;padding:14px;min-width:0}
+@media(max-width:820px){.rp-grid{grid-template-columns:1fr}}
+
 /* ---------- print (customer statement) ---------- */
 .print-only{display:none}
 @media print{
